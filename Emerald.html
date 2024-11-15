@@ -1,0 +1,835 @@
+<html><head><base href="." /><title>Emerald Coast 3D</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; }
+#gameCanvas { width: 100vw; height: 100vh; }
+.loading {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: Arial, sans-serif;
+    font-size: 24px;
+    color: white;
+    background: rgba(0,0,0,0.8);
+    padding: 20px;
+    border-radius: 10px;
+}
+.mission-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 20px;
+    border-radius: 10px;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    z-index: 1000;
+}
+.mission-popup h2 {
+    font-size: 24px;
+    margin-bottom: 10px;
+    color: gold;
+}
+.mission-popup p {
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+.mission-popup button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background: #FFD700;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+.mission-popup button:hover {
+    background: #FFC000;
+}
+#ringCounter {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    font-family: Arial, sans-serif;
+    font-size: 24px;
+    color: gold;
+    text-shadow: 2px 2px 2px rgba(0,0,0,0.5);
+}
+.victory {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: Arial, sans-serif;
+    font-size: 48px;
+    color: gold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.8);
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+}
+.victory button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    font-size: 24px;
+    background: #FFD700;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+.victory button:hover {
+    background: #FFC000;
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div class="loading">Loading Emerald Coast...</div>
+<div class="mission-popup">
+    <h2>Mission</h2>
+    <p>Collect 50 rings and reach the goal!</p>
+    <button onclick="closeMissionPopup()">OK</button>
+</div>
+<div class="victory">
+    You Won!
+    <br>
+    <button onclick="retryGame()">Play Again</button>
+</div>
+<div id="ringCounter">Rings: 0</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+
+function createCloud(x, y, z) {
+    const cloudGroup = new THREE.Group();
+    
+    const geometries = [
+        new THREE.SphereGeometry(1.5, 16, 16),
+        new THREE.SphereGeometry(1.2, 16, 16),
+        new THREE.SphereGeometry(1.3, 16, 16),
+        new THREE.SphereGeometry(1.4, 16, 16)
+    ];
+    
+    const material = new THREE.MeshPhongMaterial({
+        color: 0xFFFFFF,
+        shininess: 0
+    });
+    
+    geometries.forEach((geometry, index) => {
+        const cloudPart = new THREE.Mesh(geometry, material);
+        cloudPart.position.x = index * 1.2;
+        cloudPart.position.y = Math.sin(index * 0.5) * 0.2;
+        cloudGroup.add(cloudPart);
+    });
+    
+    cloudGroup.position.set(x, y, z);
+    return cloudGroup;
+}
+
+const clouds = [
+    createCloud(-20, 15, -20),
+    createCloud(0, 20, -30),
+    createCloud(20, 18, -25),
+    createCloud(-15, 17, -40),
+    createCloud(15, 16, -35)
+];
+
+clouds.forEach(cloud => scene.add(cloud));
+
+function animateClouds() {
+    clouds.forEach(cloud => {
+        cloud.position.x += 0.01;
+        if(cloud.position.x > 30) {
+            cloud.position.x = -30;
+        }
+    });
+}
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+class Player {
+    constructor() {
+        const geometry = new THREE.SphereGeometry(0.5);
+        const material = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(0, 1, 0);
+        this.velocity = new THREE.Vector3();
+        this.speed = 0.2;
+        this.jumpForce = 0.3;
+        this.isGrounded = false;
+        this.canHomingAttack = false;
+        this.hasJumped = false;
+        this.rings = 0;
+        this.isInvulnerable = false;
+        this.drainTimer = null;
+        this.spawnPoint = new THREE.Vector3(0, 1, 0);
+        this.isDead = false;
+        this.boostTimeout = null;
+        scene.add(this.mesh);
+    }
+
+    die() {
+        if (this.rings <= 0 && !this.isDead) {
+            this.isDead = true;
+            this.mesh.visible = false;
+            
+            setTimeout(() => {
+                this.respawn();
+            }, 2000);
+        }
+    }
+
+    respawn() {
+        this.mesh.position.copy(this.spawnPoint);
+        this.velocity.set(0, 0, 0);
+        this.mesh.visible = true;
+        this.isDead = false;
+        this.rings = 0;
+        document.getElementById('ringCounter').textContent = `Rings: ${this.rings}`;
+        if (this.boostTimeout) {
+            clearTimeout(this.boostTimeout);
+            this.boostTimeout = null;
+        }
+    }
+
+    update() {
+        if (this.isDead) return;
+
+        if (!this.isGrounded) {
+            this.velocity.y -= 0.01;
+        }
+
+        this.mesh.position.add(this.velocity);
+
+        platforms.forEach(platform => {
+            const playerBottom = this.mesh.position.y - 0.5;
+            const platformTop = platform.mesh.position.y + 0.35;
+            const platformBottom = platform.mesh.position.y - 0.35;
+            
+            const halfWidth = platform.width / 2;
+            const halfDepth = platform.depth / 2;
+            
+            if (playerBottom <= platformTop && 
+                this.mesh.position.y + 0.5 >= platformBottom &&
+                Math.abs(this.mesh.position.x - platform.mesh.position.x) < halfWidth &&
+                Math.abs(this.mesh.position.z - platform.mesh.position.z) < halfDepth) {
+                
+                if (this.velocity.y < 0) {
+                    this.mesh.position.y = platformTop + 0.5;
+                    this.velocity.y = 0;
+                    this.isGrounded = true;
+                    this.canHomingAttack = false;
+                    this.hasJumped = false;
+                    if (this.homingAttackTimer) {
+                        clearTimeout(this.homingAttackTimer);
+                        this.homingAttackTimer = null;
+                    }
+                }
+            }
+        });
+
+        if (this.mesh.position.y <= 1) {
+            this.mesh.position.y = 1;
+            this.velocity.y = 0;
+            this.isGrounded = true;
+            this.canHomingAttack = false;
+            this.hasJumped = false;
+            if (this.homingAttackTimer) {
+                clearTimeout(this.homingAttackTimer);
+                this.homingAttackTimer = null;
+            }
+        }
+    }
+
+    jump() {
+        if (this.isGrounded) {
+            this.velocity.y = this.jumpForce;
+            this.isGrounded = false;
+            this.hasJumped = true;
+            this.canHomingAttack = true;
+            this.homingAttackTimer = setTimeout(() => {
+                this.canHomingAttack = false;
+            }, 5000);
+        }
+    }
+
+    tryHomingAttack() {
+        if (!this.isGrounded && this.canHomingAttack) {
+            let closestEnemy = null;
+            let closestDistance = Infinity;
+            
+            enemies.forEach(enemy => {
+                if (enemy.active) {
+                    const distance = this.mesh.position.distanceTo(enemy.mesh.position);
+                    if (distance < closestDistance && distance < 15) {
+                        closestDistance = distance;
+                        closestEnemy = enemy;
+                    }
+                }
+            });
+
+            if (closestEnemy) {
+                this.homingAttack(closestEnemy.mesh);
+                closestEnemy.destroy();
+                this.velocity.y = this.jumpForce * 1.2;
+            }
+        }
+    }
+
+    homingAttack(target) {
+        if (!this.isGrounded && this.canHomingAttack) {
+            const direction = new THREE.Vector3()
+                .subVectors(target.position, this.mesh.position)
+                .normalize();
+            this.velocity.copy(direction.multiplyScalar(0.5));
+            this.canHomingAttack = false;
+            if (this.homingAttackTimer) {
+                clearTimeout(this.homingAttackTimer);
+                this.homingAttackTimer = null;
+            }
+            setTimeout(() => {
+                this.velocity.set(0, 0, 0);
+            }, 100);
+        }
+    }
+    
+    drainRings() {
+        if (!this.isInvulnerable) {
+            this.rings = Math.max(0, this.rings - 1);
+            document.getElementById('ringCounter').textContent = `Rings: ${this.rings}`;
+            this.isInvulnerable = true;
+            setTimeout(() => {
+                this.isInvulnerable = false;
+            }, 1000);
+        }
+    }
+
+    boostFromPanel(direction) {
+        this.velocity.x = direction.x * 1.5;
+        this.velocity.z = direction.z * 1.5;
+    }
+}
+
+class Enemy {
+    constructor() {
+        this.active = true;
+    }
+
+    destroy() {
+        if (this.active) {
+            this.active = false;
+            this.mesh.visible = false;
+            scene.remove(this.mesh);
+        }
+    }
+}
+
+class Motorbug extends Enemy {
+    constructor(x, z) {
+        super();
+        const geometry = new THREE.BoxGeometry(1, 0.5, 1);
+        const material = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(x, 0.25, z);
+        this.direction = 1;
+        this.speed = 0.05;
+        scene.add(this.mesh);
+    }
+
+    update() {
+        if (!this.active) return;
+        this.mesh.position.x += this.speed * this.direction;
+        if (Math.abs(this.mesh.position.x) > 10) {
+            this.direction *= -1;
+        }
+    }
+}
+
+class Spinner extends Enemy {
+    constructor(x, y, z) {
+        super();
+        const geometry = new THREE.OctahedronGeometry(0.5);
+        const material = new THREE.MeshPhongMaterial({ color: 0xff6600 });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(x, y, z);
+        scene.add(this.mesh);
+    }
+
+    update() {
+        if (!this.active) return;
+        this.mesh.rotation.y += 0.05;
+    }
+}
+
+class ItemMonitor {
+    constructor(x, z) {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshPhongMaterial({ color: 0xffff00 });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(x, 1, z);
+        this.active = true;
+        scene.add(this.mesh);
+    }
+
+    collect() {
+        if (this.active) {
+            this.active = false;
+            this.mesh.visible = false;
+            return 10;
+        }
+        return 0;
+    }
+}
+
+class Ring {
+    constructor(x, z, y = 1.5) {
+        const geometry = new THREE.TorusGeometry(0.3, 0.1, 8, 16);
+        const material = new THREE.MeshPhongMaterial({ color: 0xffd700 });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(x, y, z);
+        this.active = true;
+        scene.add(this.mesh);
+    }
+
+    update() {
+        if (this.active) {
+            this.mesh.rotation.y += 0.05;
+        }
+    }
+
+    collect() {
+        if (this.active) {
+            this.active = false;
+            this.mesh.visible = false;
+            scene.remove(this.mesh);
+            return 1;
+        }
+        return 0;
+    }
+}
+
+class Platform {
+    constructor(x, y, z, width = 3, depth = 3) {
+        this.mesh = new THREE.Group();
+        
+        const baseWidth = width * 0.95;
+        const baseDepth = depth * 0.95;
+        const baseGeometry = new THREE.BoxGeometry(baseWidth, 0.5, baseDepth);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x808080 });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        
+        const grassGeometry = new THREE.BoxGeometry(width, 0.2, depth);
+        const grassMaterial = new THREE.MeshPhongMaterial({ color: 0x2d5a27 });
+        const grassTop = new THREE.Mesh(grassGeometry, grassMaterial);
+        grassTop.position.y = 0.25;
+        
+        this.mesh.add(base);
+        this.mesh.add(grassTop);
+        this.mesh.position.set(x, y, z);
+        this.width = width;
+        this.depth = depth;
+        scene.add(this.mesh);
+    }
+}
+
+class Spike {
+    constructor(x, y, z) {
+        const geometry = new THREE.ConeGeometry(0.3, 1, 8);
+        const material = new THREE.MeshPhongMaterial({ color: 0x808080 });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.rotation.x = Math.PI;
+        this.mesh.position.set(x, y, z);
+        scene.add(this.mesh);
+    }
+
+    update(player) {
+        const distance = this.mesh.position.distanceTo(player.mesh.position);
+        if (distance < 1 && !player.isInvulnerable) {
+            player.drainRings();
+        }
+    }
+}
+
+class DashPanel {
+    constructor(x, y, z, rotation = 0) {
+        const baseGeometry = new THREE.BoxGeometry(1.5, 0.1, 1);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x444444 });
+        this.mesh = new THREE.Group();
+        
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        
+        const arrowGeometry = new THREE.ConeGeometry(0.4, 0.8, 3);
+        const arrowMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+        const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+        arrow.rotation.x = -Math.PI / 2;
+        arrow.position.y = 0.1;
+        
+        this.mesh.add(base);
+        this.mesh.add(arrow);
+        
+        this.mesh.position.set(x, y, z);
+        this.mesh.rotation.y = rotation;
+        
+        this.direction = new THREE.Vector3(
+            -Math.sin(rotation),
+            0,
+            -Math.cos(rotation)
+        );
+        
+        scene.add(this.mesh);
+    }
+
+    boost(player) {
+        player.velocity.x = this.direction.x * 1.0;
+        player.velocity.z = this.direction.z * 1.0;
+        
+        if (player.boostTimeout) {
+            clearTimeout(player.boostTimeout);
+        }
+        
+        player.boostTimeout = setTimeout(() => {
+            player.velocity.x = 0;
+            player.velocity.z = 0;
+            player.boostTimeout = null;
+        }, 1000);
+    }
+}
+
+class GoldenPlatform {
+    constructor(x, y, z, width = 5, depth = 5) {
+        this.mesh = new THREE.Group();
+        
+        const baseGeometry = new THREE.BoxGeometry(width, 1, depth);
+        const baseMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xFFD700,
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        
+        this.mesh.add(base);
+        this.mesh.position.set(x, y, z);
+        this.width = width;
+        this.depth = depth;
+        scene.add(this.mesh);
+    }
+}
+
+class GoalRing {
+    constructor(x, y, z) {
+        const geometry = new THREE.TorusGeometry(2, 0.3, 16, 32);
+        const material = new THREE.MeshPhongMaterial({ 
+            color: 0xFFD700,
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.set(x, y, z);
+        this.active = true;
+        scene.add(this.mesh);
+    }
+
+    update() {
+        if (this.active) {
+            this.mesh.rotation.y += 0.02;
+        }
+    }
+}
+
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5, 5, 5);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
+
+const groundGeometry = new THREE.PlaneGeometry(100, 100);
+const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const player = new Player();
+const enemies = [
+    new Motorbug(-5, 5),
+    new Motorbug(5, -5),
+    new Spinner(0, 3, -8),
+    new Spinner(-8, 4, 0),
+    new Spinner(-18, 7, -7),
+    new Spinner(-28, 9, -5),
+    new Spinner(-35, 13, -8),
+    new Spinner(-50, 17, -15),
+    new Motorbug(-60, -18),
+    new Spinner(-45, 21, -25)
+];
+
+const platforms = [
+    new Platform(5, 3, -5, 4, 4),
+    new Platform(-5, 5, -10, 6, 6),
+    new Platform(0, 7, -15, 8, 8),
+    new Platform(8, 9, -20, 12, 12),
+    new Platform(-8, 11, -25, 15, 15),
+    new Platform(0, 13, -30, 20, 20),
+    new Platform(-15, 4, -5, 4, 4),
+    new Platform(-20, 6, -8, 3, 3),
+    new Platform(-25, 8, -6, 5, 5),
+    new Platform(-30, 10, -10, 4, 4),
+    new Platform(-35, 12, -8, 6, 6),
+    new Platform(-40, 14, -12, 8, 8),
+    new Platform(-28, 7, -4, 2, 2),
+    new Platform(-32, 9, -6, 2, 2),
+    new Platform(-38, 11, -9, 3, 3),
+    new Platform(-50, 16, -15, 10, 4),
+    new Platform(-60, 18, -18, 4, 12),
+    new Platform(-45, 20, -25, 15, 3),
+    new Platform(-55, 22, -30, 3, 8)
+];
+
+const spikePlatforms = [
+    new Platform(15, 6, -10, 8, 8),
+    new Platform(20, 8, -15, 8, 8),
+    new Platform(25, 10, -20, 8, 8)
+];
+platforms.push(...spikePlatforms);
+
+const spikes = [
+    new Spike(15, 6.5, -10),
+    new Spike(15, 6.5, -8),
+    new Spike(15, 6.5, -12),
+    new Spike(20, 8.5, -15),
+    new Spike(20, 8.5, -13),
+    new Spike(20, 8.5, -17),
+    new Spike(25, 10.5, -20),
+    new Spike(25, 10.5, -18),
+    new Spike(25, 10.5, -22)
+];
+
+const monitors = [
+    new ItemMonitor(3, 3),
+    new ItemMonitor(-3, -3),
+    new ItemMonitor(7, -7),
+    new ItemMonitor(-50, -15),
+    new ItemMonitor(-60, -18),
+    new ItemMonitor(-45, -25)
+];
+
+const rings = [
+    new Ring(-5, 0),
+    new Ring(-3, 0),
+    new Ring(-1, 0),
+    new Ring(1, 0),
+    new Ring(3, 0),
+    new Ring(5, 0),
+    new Ring(0, -5),
+    new Ring(0, -3),
+    new Ring(0, -1),
+    new Ring(0, 1),
+    new Ring(-15, -5),
+    new Ring(-20, -8),
+    new Ring(-25, -6),
+    new Ring(-30, -10),
+    new Ring(-35, -8),
+    new Ring(-40, -12),
+    new Ring(5, -5, 4),
+    new Ring(-5, -10, 6),
+    new Ring(0, -15, 8),
+    new Ring(8, -20, 10),
+    new Ring(-8, -25, 12),
+    new Ring(-15, -5, 5),
+    new Ring(-20, -8, 7),
+    new Ring(-25, -6, 9),
+    new Ring(-30, -10, 11),
+    new Ring(-35, -8, 13),
+    new Ring(-50, -15, 17),
+    new Ring(-52, -15, 17),
+    new Ring(-48, -15, 17),
+    new Ring(-60, -18, 19),
+    new Ring(-60, -20, 19),
+    new Ring(-60, -22, 19),
+    new Ring(-45, -25, 21),
+    new Ring(-47, -25, 21),
+    new Ring(-43, -25, 21)
+];
+
+const dashPanels = [
+    new DashPanel(-45, 14.1, -12, 0),
+    new DashPanel(-45, 14.1, -11, 0),
+    new DashPanel(-45, 14.1, -13, 0),
+    new DashPanel(-20, 6.1, -8, Math.PI / 2),
+    new DashPanel(-19, 6.1, -8, Math.PI / 2),
+    new DashPanel(-21, 6.1, -8, Math.PI / 2),
+    new DashPanel(8, 9.1, -20, -Math.PI / 4),
+    new DashPanel(9, 9.1, -19, -Math.PI / 4),
+    new DashPanel(7, 9.1, -21, -Math.PI / 4),
+];
+
+const goldenPlatform = new GoldenPlatform(-65, 24, -35, 8, 8);
+platforms.push(goldenPlatform);
+
+const goalRing = new GoalRing(-65, 27, -35);
+
+camera.position.set(0, 5, 10);
+
+const keys = {};
+window.addEventListener('keydown', (e) => {
+    keys[e.key] = true;
+    if (e.key.toLowerCase() === 'x') {
+        player.tryHomingAttack();
+    }
+});
+window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+function closeMissionPopup() {
+    document.querySelector('.mission-popup').style.display = 'none';
+}
+
+function retryGame() {
+    // Reset player
+    player.respawn();
+    
+    // Reset enemies
+    enemies.forEach(enemy => {
+        enemy.active = true;
+        enemy.mesh.visible = true;
+        if (!scene.children.includes(enemy.mesh)) {
+            scene.add(enemy.mesh);
+        }
+    });
+    
+    // Reset rings
+    rings.forEach(ring => {
+        ring.active = true;
+        ring.mesh.visible = true;
+        if (!scene.children.includes(ring.mesh)) {
+            scene.add(ring.mesh);
+        }
+    });
+    
+    // Reset monitors
+    monitors.forEach(monitor => {
+        monitor.active = true;
+        monitor.mesh.visible = true;
+    });
+    
+    // Reset goal ring
+    goalRing.active = true;
+    
+    // Hide victory screen
+    document.querySelector('.victory').style.display = 'none';
+    
+    // Show mission popup again
+    document.querySelector('.mission-popup').style.display = 'block';
+    
+    // Show player
+    player.mesh.visible = true;
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    animateClouds();
+
+    if (keys['ArrowLeft']) {
+        player.mesh.position.x -= player.speed;
+    }
+    if (keys['ArrowRight']) {
+        player.mesh.position.x += player.speed;
+    }
+    if (keys['ArrowUp']) {
+        player.mesh.position.z -= player.speed;
+    }
+    if (keys['ArrowDown']) {
+        player.mesh.position.z += player.speed;
+    }
+    if (keys[' ']) {
+        player.jump();
+    }
+
+    player.update();
+    enemies.forEach(enemy => {
+        if (enemy.active) {
+            enemy.update();
+            const distance = player.mesh.position.distanceTo(enemy.mesh.position);
+            if (distance < 1 && !player.isInvulnerable) {
+                if (player.rings <= 0) {
+                    player.die();
+                } else {
+                    player.drainRings();
+                }
+            }
+        }
+    });
+
+    spikes.forEach(spike => {
+        spike.update(player);
+    });
+
+    rings.forEach(ring => {
+        if (ring.active) {
+            ring.update();
+            const distance = player.mesh.position.distanceTo(ring.mesh.position);
+            if (distance < 1) {
+                player.rings += ring.collect();
+                document.getElementById('ringCounter').textContent = `Rings: ${player.rings}`;
+            }
+        }
+    });
+
+    monitors.forEach(monitor => {
+        if (monitor.active) {
+            const distance = player.mesh.position.distanceTo(monitor.mesh.position);
+            if (distance < 1) {
+                player.rings += monitor.collect();
+                document.getElementById('ringCounter').textContent = `Rings: ${player.rings}`;
+            }
+        }
+    });
+
+    dashPanels.forEach(panel => {
+        const distance = player.mesh.position.distanceTo(panel.mesh.position);
+        if (distance < 1) {
+            panel.boost(player);
+        }
+    });
+
+    if (goalRing.active) {
+        goalRing.update();
+        const distance = player.mesh.position.distanceTo(goalRing.mesh.position);
+        if (distance < 2.5) {
+            if (player.rings >= 50) {
+                goalRing.active = false;
+                document.querySelector('.victory').style.display = 'block';
+                player.mesh.visible = false;
+            }
+        }
+    }
+
+    if (!player.isDead) {
+        camera.position.x = player.mesh.position.x;
+        camera.position.y = Math.max(5, player.mesh.position.y + 4);
+        camera.position.z = player.mesh.position.z + 10;
+        camera.lookAt(player.mesh.position);
+    }
+
+    renderer.render(scene, camera);
+}
+
+document.querySelector('.loading').style.display = 'none';
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

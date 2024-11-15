@@ -1,0 +1,597 @@
+<html><head><base href="." />
+<title>Reactor Core Manager</title>
+<style>
+:root {
+  --glow: 0 0 10px var(--reactor-color, #00ff00);
+  --reactor-color: #00ff00;
+  --background-glow: radial-gradient(var(--reactor-color), #004400);
+}
+
+body {
+  background: #1a1a1a;
+  color: #00ff00;
+  font-family: 'Courier New', monospace;
+  margin: 0;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.reactor-container {
+  display: flex;
+  gap: 20px;
+  height: 100vh;
+  padding: 20px; /* Add padding */
+}
+
+.reactor-core {
+  position: relative;
+  width: 400px;
+  height: 400px;
+  border: 2px solid var(--reactor-color);
+  border-radius: 50%;
+  box-shadow: var(--glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse 4s infinite;
+  opacity: 0;
+  transition: opacity 2s, border-color 0.5s;
+}
+
+.reactor-core.visible {
+  opacity: 1;
+}
+
+.control-rod {
+  position: absolute;
+  width: 20px;
+  height: 120px;
+  background: #666;
+  cursor: pointer;
+  transition: transform 0.5s;
+}
+
+.rod1 { transform: rotate(0deg) translateY(-150px); }
+.rod2 { transform: rotate(72deg) translateY(-150px); }
+.rod3 { transform: rotate(144deg) translateY(-150px); }
+.rod4 { transform: rotate(216deg) translateY(-150px); }
+.rod5 { transform: rotate(288deg) translateY(-150px); }
+
+.core-center {
+  width: 100px;
+  height: 100px;
+  background: var(--background-glow);
+  border-radius: 50%;
+  animation: glow 2s infinite;
+  transition: background 0.5s;
+}
+
+.stats {
+  padding: 20px;
+  border: 1px solid var(--reactor-color);
+  width: 300px;
+  border-radius: 15px; /* Add rounded corners */
+  transition: border-color 0.5s;
+}
+
+.warning {
+  color: #ff0000;
+  animation: blink 1s infinite;
+  display: none;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 10px var(--reactor-color); }
+  50% { box-shadow: 0 0 20px var(--reactor-color); }
+  100% { box-shadow: 0 0 10px var(--reactor-color); }
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.meter {
+  width: 100%;
+  height: 20px;
+  background: #333;
+  margin: 10px 0;
+  position: relative;
+  border-radius: 10px; /* Add rounded corners */
+  overflow: hidden; /* Keep meter fill within bounds */
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--reactor-color);
+  transition: width 0.3s, background 0.5s;
+}
+
+.startup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.startup-sequence {
+  width: 500px;
+  padding: 20px;
+  border: 2px solid var(--reactor-color);
+  box-shadow: var(--glow);
+  border-radius: 15px; /* Add rounded corners */
+}
+
+.startup-progress {
+  width: 100%;
+  height: 4px;
+  background: #004400;
+  margin: 20px 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px; /* Add rounded corners */
+}
+
+.progress-bar {
+  position: absolute;
+  width: 0%;
+  height: 100%;
+  background: var(--reactor-color);
+  transition: width 3s linear;
+}
+
+.sequence-step {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--reactor-color);
+  opacity: 0.5;
+  border-radius: 8px; /* Add rounded corners */
+}
+
+.sequence-step.active {
+  opacity: 1;
+  background: rgba(0, 255, 0, 0.1);
+}
+
+.sequence-step.completed {
+  opacity: 0.8;
+  background: rgba(0, 255, 0, 0.2);
+}
+
+.startup-button {
+  margin: 10px;
+  padding: 10px 20px;
+  background: #004400;
+  border: 1px solid var(--reactor-color);
+  color: var(--reactor-color);
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  border-radius: 8px; /* Add rounded corners */
+}
+
+.startup-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Add new styles for coolant controls */
+.coolant-controls {
+  margin-top: 20px;
+  padding: 10px;
+  border: 1px solid var(--reactor-color);
+  border-radius: 12px; /* Add rounded corners */
+}
+
+.coolant-button {
+  background: #004400;
+  border: 1px solid var(--reactor-color);
+  color: var(--reactor-color);
+  padding: 5px 10px;
+  margin: 5px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  border-radius: 6px; /* Add rounded corners */
+}
+
+.coolant-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.coolant-flow {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(transparent 30%, rgba(0, 255, 255, 0.1) 70%);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.heating-active .core-center {
+  background: radial-gradient(#ff5500, #441100);
+}
+
+/* Add explosion animation */
+@keyframes explode {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes shockwave {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+    border: 2px solid #ff5500;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+    border: 2px solid #ff0000;
+  }
+}
+
+.exploding .reactor-core {
+  animation: explode 2s forwards;
+  border-color: #ff0000;
+  background: radial-gradient(#ff5500, #ff0000);
+}
+
+.exploding .core-center {
+  background: radial-gradient(#ffffff, #ff5500) !important;
+}
+
+.shockwave {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: shockwave 1s ease-out forwards;
+}
+
+@keyframes particleFade {
+  0% { transform: translateY(0) scale(0); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-100px) scale(1); opacity: 0; }
+}
+
+.startup-particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: var(--reactor-color);
+  border-radius: 50%;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<audio id="reactor-ambient" loop>
+  <source src="Audio - Reactor Loop - Creator Store.ogg" type="audio/ogg">
+</audio>
+<audio id="explosion-sound">
+  <source src="Urinal2.wav" type="audio/wav">
+</audio>
+
+<div id="startup-overlay" class="startup-overlay">
+  <div class="startup-sequence">
+    <h2>Reactor Core Initialization</h2>
+    <div class="startup-progress">
+      <div class="progress-bar"></div>
+    </div>
+    <button id="initialize-reactor" class="startup-button">Initialize Reactor Core</button>
+  </div>
+</div>
+
+<div class="reactor-container">
+  <div class="reactor-core">
+    <div class="control-rod rod1" data-rod="1"></div>
+    <div class="control-rod rod2" data-rod="2"></div>
+    <div class="control-rod rod3" data-rod="3"></div>
+    <div class="control-rod rod4" data-rod="4"></div>
+    <div class="control-rod rod5" data-rod="5"></div>
+    <div class="core-center"></div>
+    <div class="coolant-flow" id="coolant-effect"></div>
+  </div>
+
+  <div class="stats">
+    <h2>Reactor Statistics</h2>
+    <p>Power Output: <span id="power">0</span> MW</p>
+    <div class="meter">
+      <div class="meter-fill" id="power-meter"></div>
+    </div>
+    
+    <p>Core Temperature: <span id="temp">20</span>°C</p>
+    <div class="meter">
+      <div class="meter-fill" id="temp-meter"></div>
+    </div>
+    
+    <p>Stability: <span id="stability">100</span>%</p>
+    <div class="meter">
+      <div class="meter-fill" id="stability-meter"></div>
+    </div>
+    
+    <div class="warning" id="warning">⚠️ REACTOR CRITICAL ⚠️</div>
+
+    <div class="coolant-controls">
+      <h3>System Controls</h3>
+      <p>Coolant Level: <span id="coolant">0</span>%</p>
+      <div class="meter">
+        <div class="meter-fill" id="coolant-meter"></div>
+      </div>
+      <button class="coolant-button" id="increase-coolant">Increase Coolant</button>
+      <button class="coolant-button" id="decrease-coolant">Decrease Coolant</button>
+      
+      <p>Heating: <span id="heating-status">OFF</span></p>
+      <button class="coolant-button" id="toggle-heating">Toggle Heating</button>
+    </div>
+  </div>
+</div>
+
+<script>
+class ReactorCore {
+  constructor() {
+    this.power = 0;
+    this.temperature = 20;
+    this.stability = 100;
+    this.rods = [0, 0, 0, 0, 0]; // 0 = fully inserted, 100 = fully withdrawn
+    this.coolantLevel = 0;
+    this.heatingActive = false;
+    this.running = false;
+    this.maxTemp = 500;
+  }
+
+  start() {
+    this.running = true;
+    this.update();
+  }
+
+  update() {
+    if (!this.running) return;
+
+    // Calculate power based on control rod positions
+    const rodAverage = this.rods.reduce((a, b) => a + b, 0) / 5;
+    this.power = Math.floor(rodAverage * 10);
+    
+    // Temperature calculation with heating and cooling effects
+    let tempChange = this.power * 5; // Base temperature increase from power
+    
+    if (this.heatingActive) {
+      tempChange += 10; // Additional heating when active
+    }
+    
+    // Cooling effect based on coolant level
+    const cooling = (this.coolantLevel / 100) * 15;
+    tempChange -= cooling;
+    
+    this.temperature = Math.max(20, Math.min(this.maxTemp, this.temperature + tempChange * 0.1));
+    
+    // Stability calculation with coolant bonus
+    const coolantBonus = this.coolantLevel * 0.2;
+    this.stability = Math.max(0, Math.min(100, 100 - (this.temperature - 100) / 2 + coolantBonus));
+
+    this.updateDisplay();
+    this.updateCoolantEffect();
+    
+    if (this.stability < 20) {
+      document.getElementById('warning').style.display = 'block';
+    } else {
+      document.getElementById('warning').style.display = 'none';
+    }
+
+    if (this.stability <= 0) {
+      this.meltdown();
+      return;
+    }
+
+    requestAnimationFrame(() => this.update());
+  }
+
+  updateDisplay() {
+    // Add this at the start of updateDisplay()
+    let color;
+    if (this.temperature >= 300) {
+      color = '#ff0000'; // Red
+    } else if (this.temperature >= 100) {
+      // Calculate gradient from green to red
+      const percent = (this.temperature - 100) / 200;
+      const red = Math.floor(255 * percent);
+      const green = Math.floor(255 * (1 - percent));
+      color = `#${red.toString(16).padStart(2,'0')}${green.toString(16).padStart(2,'0')}00`;
+    } else {
+      color = '#00ff00'; // Green
+    }
+    
+    // Update CSS variable
+    document.documentElement.style.setProperty('--reactor-color', color);
+    document.documentElement.style.setProperty('--background-glow', `radial-gradient(${color}, #004400)`);
+
+    // Existing display update code...
+    document.getElementById('power').textContent = this.power;
+    document.getElementById('temp').textContent = Math.floor(this.temperature);
+    document.getElementById('stability').textContent = Math.floor(this.stability);
+    document.getElementById('coolant').textContent = Math.floor(this.coolantLevel);
+    document.getElementById('coolant-meter').style.width = `${this.coolantLevel}%`;
+    document.getElementById('heating-status').textContent = this.heatingActive ? 'ON' : 'OFF';
+    
+    const reactorCore = document.querySelector('.reactor-core');
+    if (this.heatingActive) {
+      reactorCore.classList.add('heating-active');
+    } else {
+      reactorCore.classList.remove('heating-active');
+    }
+    
+    document.getElementById('power-meter').style.width = `${(this.power / 1000) * 100}%`;
+    document.getElementById('temp-meter').style.width = `${(this.temperature / 500) * 100}%`;
+    document.getElementById('stability-meter').style.width = `${this.stability}%`;
+
+    // Add this at the end:
+    this.updateSound();
+  }
+
+  updateSound() {
+    const ambient = document.getElementById('reactor-ambient');
+    // Map temperature from 20-500°C to playback rate 0.5-2.0
+    const rate = 0.5 + (this.temperature - 20) * (1.5 / (this.maxTemp - 20));
+    ambient.playbackRate = Math.max(0.5, Math.min(2.0, rate));
+  }
+
+  updateCoolantEffect() {
+    const coolantEffect = document.getElementById('coolant-effect');
+    coolantEffect.style.opacity = this.coolantLevel / 100;
+  }
+
+  meltdown() {
+    this.running = false;
+    
+    // Play explosion sound
+    const explosionSound = document.getElementById('explosion-sound');
+    explosionSound.play();
+    
+    // Create shockwave elements
+    for(let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        const shockwave = document.createElement('div');
+        shockwave.className = 'shockwave';
+        document.querySelector('.reactor-core').appendChild(shockwave);
+        
+        // Remove shockwave after animation
+        setTimeout(() => shockwave.remove(), 1000);
+      }, i * 200);
+    }
+    
+    // Add exploding class to container
+    document.querySelector('.reactor-container').classList.add('exploding');
+    
+    // Delay the reset to allow animation to complete
+    setTimeout(() => {
+      alert('Reactor Meltdown! Game Over');
+      location.reload();
+    }, 2000);
+  }
+
+  adjustRod(rodIndex, amount) {
+    this.rods[rodIndex] = Math.max(0, Math.min(100, this.rods[rodIndex] + amount));
+    const rod = document.querySelector(`.rod${rodIndex + 1}`);
+    rod.style.transform = `rotate(${72 * rodIndex}deg) translateY(-${150 - this.rods[rodIndex]}px)`;
+  }
+
+  adjustCoolant(amount) {
+    this.coolantLevel = Math.max(0, Math.min(100, this.coolantLevel + amount));
+  }
+
+  toggleHeating() {
+    this.heatingActive = !this.heatingActive;
+  }
+}
+
+class StartupSequence {
+  constructor(reactor) {
+    this.reactor = reactor;
+    this.initialized = false;
+    document.getElementById('initialize-reactor').addEventListener('click', () => this.startInitialization());
+  }
+
+  createParticle() {
+    const particle = document.createElement('div');
+    particle.className = 'startup-particle';
+    const core = document.querySelector('.reactor-core');
+    const rect = core.getBoundingClientRect();
+    
+    particle.style.left = `${rect.left + Math.random() * rect.width}px`;
+    particle.style.top = `${rect.top + rect.height}px`;
+    particle.style.animation = `particleFade ${1 + Math.random()}s forwards`;
+    
+    document.body.appendChild(particle);
+    setTimeout(() => particle.remove(), 2000);
+  }
+
+  startInitialization() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    const button = document.getElementById('initialize-reactor');
+    const progressBar = document.querySelector('.progress-bar');
+    const core = document.querySelector('.reactor-core');
+    const ambient = document.getElementById('reactor-ambient');
+    
+    button.disabled = true;
+    progressBar.style.width = '100%';
+
+    // Start particle animation
+    let particleInterval = setInterval(() => this.createParticle(), 100);
+
+    // Fade in core after 2 seconds
+    setTimeout(() => {
+      core.classList.add('visible');
+    }, 2000);
+
+    // Complete startup after 3 seconds
+    setTimeout(() => {
+      clearInterval(particleInterval);
+      document.getElementById('startup-overlay').style.display = 'none';
+      ambient.play();
+      this.reactor.start();
+    }, 3000);
+  }
+}
+
+const reactor = new ReactorCore();
+const startupSequence = new StartupSequence(reactor);
+
+document.querySelectorAll('.control-rod').forEach(rod => {
+  rod.addEventListener('click', (e) => {
+    const rodIndex = parseInt(e.target.dataset.rod) - 1;
+    reactor.adjustRod(rodIndex, 10);
+  });
+  
+  rod.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const rodIndex = parseInt(e.target.dataset.rod) - 1;
+    reactor.adjustRod(rodIndex, -10);
+  });
+});
+
+// Add coolant control listeners
+document.getElementById('increase-coolant').addEventListener('click', () => {
+  reactor.adjustCoolant(10);
+});
+
+document.getElementById('decrease-coolant').addEventListener('click', () => {
+  reactor.adjustCoolant(-10);
+});
+
+document.getElementById('toggle-heating').addEventListener('click', () => {
+  reactor.toggleHeating();
+});
+</script>
+
+</body>
+</html>
