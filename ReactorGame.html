@@ -299,6 +299,9 @@ body {
 <audio id="explosion-sound">
   <source src="Urinal2.wav" type="audio/wav">
 </audio>
+  <audio id="click">
+  <source src="alarm-sample.mp3" type="audio/wav">
+</audio>
 
 <div id="startup-overlay" class="startup-overlay">
   <div class="startup-sequence">
@@ -356,6 +359,7 @@ body {
 </div>
 
 <script>
+    const sfx = document.getElementById('click');
 class ReactorCore {
   constructor() {
     this.power = 0;
@@ -536,7 +540,7 @@ class StartupSequence {
   startInitialization() {
     if (this.initialized) return;
     this.initialized = true;
-
+    sfx.play();
     const button = document.getElementById('initialize-reactor');
     const progressBar = document.querySelector('.progress-bar');
     const core = document.querySelector('.reactor-core');
@@ -568,12 +572,14 @@ const startupSequence = new StartupSequence(reactor);
 
 document.querySelectorAll('.control-rod').forEach(rod => {
   rod.addEventListener('click', (e) => {
+    sfx.play();
     const rodIndex = parseInt(e.target.dataset.rod) - 1;
     reactor.adjustRod(rodIndex, 10);
   });
   
   rod.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    sfx.play();
     const rodIndex = parseInt(e.target.dataset.rod) - 1;
     reactor.adjustRod(rodIndex, -10);
   });
@@ -581,14 +587,17 @@ document.querySelectorAll('.control-rod').forEach(rod => {
 
 // Add coolant control listeners
 document.getElementById('increase-coolant').addEventListener('click', () => {
+    sfx.play();
   reactor.adjustCoolant(10);
 });
 
 document.getElementById('decrease-coolant').addEventListener('click', () => {
+    sfx.play();
   reactor.adjustCoolant(-10);
 });
 
 document.getElementById('toggle-heating').addEventListener('click', () => {
+  sfx.play();
   reactor.toggleHeating();
 });
 </script>
