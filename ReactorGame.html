@@ -9,7 +9,7 @@
 
 body {
   background: #1a1a1a;
-  color: #ff0000;
+  color: #00ff00;
   font-family: 'Courier New', monospace;
   margin: 0;
   padding: 20px;
@@ -424,9 +424,13 @@ class ReactorCore {
     if (this.temperature >= 300) {
       color = '#ff0000'; // Red
     } else if (this.temperature >= 100) {
-      
+      // Calculate gradient from green to red
+      const percent = (this.temperature - 100) / 200;
+      const red = Math.floor(255 * percent);
+      const green = Math.floor(255 * (1 - percent));
+      color = `#${red.toString(16).padStart(2,'0')}${green.toString(16).padStart(2,'0')}00`;
     } else {
-      color = 'ff0000'; // Green
+      color = '#00ff00'; // Green
     }
     
     // Update CSS variable
